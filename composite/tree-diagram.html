@@ -42,6 +42,25 @@
         draw() {
             this._root.draw()
         }
+
+        getCollidingNode(x, y) {
+            return this._getCollidingNode(this._root, x, y)
+        }
+
+        _getCollidingNode(node, x, y) {
+            if (node.collides(x, y)) {
+                return node
+            }
+
+            const childNodes = node.getChildren()
+            if (!childNodes) {
+                return undefined
+            }
+
+            const collidingChildNodes = childNodes.map(childNode => this._getCollidingNode(childNode, x, y))
+            // get first truthy colliding node
+            return collidingChildNodes.find(node => node)
+        }
     }
 
     class Node {
@@ -80,6 +99,35 @@
             this.y = y
         }
 
+        getPosition() {
+            return {
+                x: this.x,
+                y: this.y
+            }
+        }
+
+        collides(x, y) {
+            const padding = 6
+            const glyphSize = 8
+            const maxHitBoxX = this.x + glyphSize + padding
+            const maxHitBoxY = this.y + glyphSize + padding
+
+            const collides = (
+                x >= this.x - padding && x <= maxHitBoxX &&
+                y >= this.y - padding && y <= maxHitBoxY
+            )
+
+            if (collides) {
+                console.log(`node ${this.id}: collides with ${x} ${y}`)
+            }
+
+            return collides
+        }
+
+        setTreePosition(x, y) {
+            this.setPosition(x, y)
+        }
+
         setParent(parent) {
             if (!parent) {
                 throw new Error(`node ${this.id}: invalid parent: ${parent}`)
@@ -89,6 +137,10 @@
 
         addChild(child) {
             throw new Error(`node ${this.id}: addChild not implemented`)
+        }
+
+        getChildren() {
+            return undefined
         }
 
         draw() {
@@ -104,7 +156,7 @@
             c.beginPath()
 
             const glyphHeight = 8
-            const glyphMargin = 5
+            const glyphMargin = 6
             const offsetToCenterOfGlyph = 3
             c.moveTo(this.x + offsetToCenterOfGlyph, this.y - glyphHeight - glyphMargin)
             c.lineTo(this.parent.x + offsetToCenterOfGlyph, this.parent.y + glyphMargin)
@@ -127,6 +179,29 @@
         draw() {
             super.draw()
             this.children.forEach(child => child.draw())
+        }
+
+        setTreePosition(x, y) {
+            if (x === undefined) {
+                throw new Error(`node ${this.id}: x is required`)
+            }
+            if (y === undefined) {
+                throw new Error(`node ${this.id}: y is required`)
+            }
+
+            const xDifference = this.x - x
+            const yDifference = this.y - y
+
+            super.setTreePosition(x, y)
+
+            // propagate the positional difference to children
+            // this.children.forEach(child => {
+            //     this.setTreePosition(child.x - xDifference, child.y - yDifference)
+            // })
+        }
+
+        getChildren() {
+            return this.children
         }
     }
 
@@ -210,6 +285,105 @@
             const t = new TreeBuilder().buildFromRepresentation(treeRepresentation, ctx)
             t.draw()
         }
+
+        testDraggableTreeBuiltFromObjectRenders(ctx, canvas) {
+            const treeRepresentation = {
+                id: 'a',
+                x: 300,
+                y: 50,
+                children: [
+                    {
+                        id: 'b',
+                        x: 325,
+                        y: 100,
+                        children: [
+                            {
+                                id: 'd',
+                                x: 400,
+                                y: 150,
+                                children: [
+                                    {
+                                        id: 'f',
+                                        x: 375,
+                                        y: 200,
+                                    },
+                                    {
+                                        id: 'g',
+                                        x: 425,
+                                        y: 200,
+                                        children: [
+                                            {
+                                                id: 'h',
+                                                x: 450,
+                                                y: 250,
+                                            },
+                                            {
+                                                id: 'i',
+                                                x: 400,
+                                                y: 250,
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                id: 'e',
+                                x: 300,
+                                y: 150,
+                            }
+                        ]
+                    },
+                    {
+                        id: 'c',
+                        x: 275,
+                        y: 100,
+                    }
+                ]
+            }
+
+            const tree = new TreeBuilder().buildFromRepresentation(treeRepresentation, ctx)
+            tree.draw()
+
+            const treeNodeDrag = ev => {
+                const initialX = ev.clientX
+                const initialY = ev.clientY
+
+                const selectedNode = tree.getCollidingNode(initialX, initialY)
+                if (!selectedNode) {
+                    return
+                }
+
+                const initialSelectedNodePosition = selectedNode.getPosition()
+
+                const moveSelectedNode = (ev) => {
+                    const deltaX = ev.clientX - initialX
+                    const deltaY = ev.clientY - initialY
+                    // Here's the desirable consequence of the composite
+                    // pattern in this case. The external client can trigger
+                    // the movement of a subtree through a single external call.
+                    selectedNode.setTreePosition(
+                        initialSelectedNodePosition.x + deltaX,
+                        initialSelectedNodePosition.y + deltaY
+                    )
+
+                    ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+                    // Another desirable consequence: re-render the whole tree
+                    // with a single external call without iteration or
+                    // arguments.
+                    tree.draw()
+                }
+
+                canvas.addEventListener('mousemove', moveSelectedNode)
+                canvas.addEventListener('mouseup', () => {
+                    canvas.removeEventListener('mousemove', moveSelectedNode)
+                })
+            }
+
+            canvas.addEventListener('mousedown', treeNodeDrag)
+
+
+        }
     }
 
     const canvas = document.getElementById('canvas')
@@ -217,7 +391,5 @@
     canvas.height = window.innerHeight
     const ctx = canvas.getContext('2d')
 
-    new CompositeTreeTests().testTreeBuiltFromObjectRenders(ctx);
-
-
+    new CompositeTreeTests().testDraggableTreeBuiltFromObjectRenders(ctx, canvas);
 </script>
