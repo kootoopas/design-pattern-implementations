@@ -178,7 +178,9 @@
 
         draw() {
             super.draw()
-            this.children.forEach(child => child.draw())
+            this.children.forEach(child => {
+                child.draw()
+            })
         }
 
         setTreePosition(x, y) {
@@ -195,9 +197,9 @@
             super.setTreePosition(x, y)
 
             // propagate the positional difference to children
-            // this.children.forEach(child => {
-            //     this.setTreePosition(child.x - xDifference, child.y - yDifference)
-            // })
+            this.children.forEach(child => {
+                child.setTreePosition(child.x - xDifference, child.y - yDifference)
+            })
         }
 
         getChildren() {
