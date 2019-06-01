@@ -1,0 +1,152 @@
+<style>
+    body {
+        background: #111;
+    }
+</style>
+
+
+<script>
+
+    class NoteClient {
+        create(contents) {
+            throw new Error('create not implemented')
+        }
+
+        update(urn, contents) {
+            throw new Error('update not implemented')
+        }
+
+        get(urn) {
+            throw new Error('get not implemented')
+        }
+
+        list() {
+            throw new Error('list not implemented')
+        }
+
+        delete(urn) {
+            throw new Error('delete not implemented')
+        }
+
+        authenticate() {
+            throw new Error('authenticate is not implemented')
+        }
+
+        requiresAuthentication() {
+            return false
+        }
+    }
+
+    class Note {
+        constructor(urn, contents) {
+            this.urn = urn
+            this.contents = contents
+        }
+    }
+
+    class LocalNoteClient extends NoteClient {
+        constructor(storage, registry) {
+            super()
+            this.storage = storage
+            this.registry = registry
+        }
+
+        create(contents) {
+            const urn = `notes/${window.crypto.getRandomValues(new Uint32Array(1))[0].toString()}`
+            this.registry.add(urn)
+            this.storage.setItem(urn, contents)
+        }
+
+        update(urn, contents) {
+            if (this.registry.resourceDoesNotExist(urn)) {
+                throw new Error(`${urn}: cannot update note that does not exist`)
+            }
+
+            return new Note(urn, this.storage.setItem(urn, contents))
+        }
+
+        list() {
+            return this.registry.list().map(
+                noteUrn => new Note(noteUrn, this.storage.getItem(noteUrn))
+            )
+        }
+
+        get(urn) {
+            if (this.registry.resourceDoesNotExist(urn)) {
+                throw new Error(`${urn}: cannot get note that does not exist`)
+            }
+
+            return new Note(urn, this.storage.getItem(urn))
+        }
+
+        delete(urn) {
+            if (this.registry.resourceDoesNotExist(urn)) {
+                throw new Error(`${urn}: cannot remove note that does not exist`)
+            }
+
+            this.storage.removeItem(urn)
+            this.registry.remove(urn)
+
+            return urn
+        }
+    }
+
+    class LocalResourceRegistry {
+        constructor(name, storage) {
+            this.name = name
+            this.storage = storage
+        }
+
+        add(urn) {
+            if (this.list().length === 0) {
+                this.storage.setItem(this.name, [urn])
+            } else {
+                this.storage.setItem(this.name, [...this.list(), urn].toString())
+            }
+        }
+
+        remove(urn) {
+            return this.list().filter(registeredUrn => registeredUrn !== urn)
+        }
+
+        resourceDoesNotExist(urn) {
+            return !this.list().some(registeredUrn => registeredUrn === urn)
+        }
+
+        list() {
+            const serializedUrns = this.storage.getItem(this.name)
+            if (!serializedUrns) {
+                return []
+            }
+
+            return serializedUrns.split(',')
+        }
+    }
+
+    class GistNoteClient extends NoteClient {
+        requiresAuthentication() {
+            return true
+        }
+    }
+
+    // TODO:
+    //  add gist client (auth, create, get, list,)
+    //  add pastebin client (auth,)
+
+    class App {
+        constructor(noteClient) {
+            this.noteClient = noteClient
+        }
+    }
+
+    function initializeApp(window) {
+        window.app = new App(
+            new LocalNoteClient(
+                window.localStorage,
+                new LocalResourceRegistry('notes', window.localStorage)
+            )
+        )
+    }
+
+    initializeApp(window)
+</script>
