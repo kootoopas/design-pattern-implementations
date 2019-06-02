@@ -77,7 +77,7 @@
     <ul id="note-list"></ul>
 
     <main id="note-editor">
-        <h2 id="note-editor-title">dfsa</h2>
+        <h2 id="note-editor-title"></h2>
         <textarea id="note-text-editor"></textarea>
     </main>
 </div>
@@ -358,8 +358,8 @@
         }
 
         _applySelectedNoteToEditor(note) {
-            const noteTextEditor = this.document.getElementById('note-text-editor')
-            noteTextEditor.value = note.contents
+            this.document.getElementById('note-editor-title').innerText = note.urn
+            this.document.getElementById('note-text-editor').value = note.contents
         }
     }
 
