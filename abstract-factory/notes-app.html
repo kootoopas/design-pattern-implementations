@@ -1,15 +1,77 @@
 <style>
     body {
         background: #111;
+        color: #eee;
+        margin: 0;
+        font-size: 14px;
+    }
+
+    #note-list {
+        flex: 20%;
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
+
+    #note-list li {
+        padding: .5em 1em;
+    }
+
+    #note-list li:hover {
+        background-color: #222;
+    }
+
+    #note-list li.selected {
+        background-color: #222;
+        color: goldenrod;
+    }
+
+    #note-editor {
+        flex: 80%;
+    }
+
+    #note-text-editor {
+        width: 100%;
+        height: 100%;
+        border: 0;
+        border-left: 1px solid #222;
+        background-color: #111;
+        color: #eee;
+        padding: 1em 2em;
+        line-height: 1.5;
+        font: 400 1em serif;
+    }
+
+    #note-client-select {
+        margin: .5em 1em;
+    }
+
+    .wrapper {
+        display: flex;
+    }
+
+    .wrapper.view {
+        height: 95%;
     }
 </style>
 
-<select id="note-client-select" onchange="window.app.settings.setNoteClient(this.options[this.selectedIndex].value)">
-    <option id="note-client-select-local" value="local">local</option>
-    <option id="note-client-select-gist" value="gist">gist</option>
-    <option id="note-client-select-pastebin" value="pastebin">pastebin</option>
-</select>
 
+
+<div class="wrapper top-bar">
+    <select id="note-client-select" onchange="window.app.settings.setNoteClient(this.options[this.selectedIndex].value)">
+        <option id="note-client-select-local" value="local">local</option>
+        <option id="note-client-select-gist" value="gist">gist</option>
+        <option id="note-client-select-pastebin" value="pastebin">pastebin</option>
+    </select>
+</div>
+
+<div class="wrapper view">
+    <ul id="note-list"></ul>
+
+    <main id="note-editor">
+        <textarea id="note-text-editor"></textarea>
+    </main>
+</div>
 <script>
 
     class NoteClient {
@@ -50,16 +112,20 @@
     }
 
     class LocalNoteClient extends NoteClient {
-        constructor(storage, registry) {
+        constructor(storage, registry, eventHandlers) {
             super()
             this._storage = storage
             this._registry = registry
+            this._eventHandlers = eventHandlers
+
+            this._emitLocalNoteChangeEvent()
         }
 
         create(contents) {
             const urn = `notes/${window.crypto.getRandomValues(new Uint32Array(1))[0].toString()}`
             this._registry.add(urn)
             this._storage.setItem(urn, contents)
+            this._emitLocalNoteChangeEvent()
         }
 
         update(urn, contents) {
@@ -67,7 +133,10 @@
                 throw new Error(`${urn}: cannot update note that does not exist`)
             }
 
-            return new Note(urn, this._storage.setItem(urn, contents))
+            const note = new Note(urn, this._storage.setItem(urn, contents))
+            this._emitLocalNoteChangeEvent()
+
+            return note
         }
 
         list() {
@@ -91,12 +160,23 @@
 
             this._storage.removeItem(urn)
             this._registry.remove(urn)
+            this._emitLocalNoteChangeEvent()
 
             return urn
         }
 
         requiresAuthentication() {
             return false
+        }
+
+        _emitLocalNoteChangeEvent() {
+            this._eventHandlers.localNoteChangeHandler(this.list())
+        }
+    }
+
+    class LocalNoteClientEventHandlers {
+        constructor(localNoteChangeHandler) {
+            this.localNoteChangeHandler = localNoteChangeHandler
         }
     }
 
@@ -146,24 +226,24 @@
         constructor(noteClient, settings) {
             this.noteClient = noteClient
             this.settings = settings
+            this._setInitiallySelectedNote()
+        }
+
+        _setInitiallySelectedNote() {
+            const notes = this.noteClient.list()
+            this.selectedNote = notes.length > 0 ? notes[0] : undefined;
         }
     }
 
     class Settings {
         constructor(storage) {
             this._storage = storage
+            this._eventHandlers = undefined
 
             const noteClient = this.getNoteClient()
             if (noteClient == null) {
                 this.setNoteClient('local')
             }
-        }
-
-        applyToUi(document) {
-            const selectedNoteClient = this.getNoteClient()
-            document
-                .getElementById(`note-client-select-${selectedNoteClient}`)
-                .setAttribute('selected', '')
         }
 
         setNoteClient(noteClient) {
@@ -172,48 +252,155 @@
             }
 
             this._storage.setItem('settings/noteClient', noteClient)
+            this._eventHandlers.noteClientChangeHandler(noteClient)
         }
 
         getNoteClient() {
             return this._storage.getItem('settings/noteClient')
         }
+
+        setEventHandlers(eventHandlers) {
+            this._eventHandlers = eventHandlers
+        }
+    }
+
+    // Event store for settings object.
+    class SettingsEventHandlers {
+        constructor(noteClientChangeHandler) {
+            this.noteClientChangeHandler = noteClientChangeHandler
+        }
+    }
+
+    class UiRenderer {
+        constructor(document) {
+            this.document = document
+        }
+
+        applySettingsToUi(settings) {
+            const selectedNoteClient = settings.getNoteClient()
+            this.document
+                .getElementById(`note-client-select-${selectedNoteClient}`)
+                .setAttribute('selected', '')
+        }
+
+        applyNotesToUi(notes) {
+            const noteList = this.document.getElementById('note-list')
+            const selectedNotes = noteList.getElementsByClassName('selected')
+            let selectedNoteUrn = undefined
+            if (selectedNotes.length === 1) {
+                selectedNoteUrn = selectedNotes[0].getAttribute('data-urn')
+            }
+
+            noteList.innerHTML = ''
+            notes.forEach(
+                note => {
+                    const noteListItem = this.document.createElement('li')
+                    noteListItem.setAttribute('data-urn', note.urn)
+                    noteListItem.appendChild(this.document.createTextNode(note.urn))
+                    if (note.urn === selectedNoteUrn) {
+                        noteListItem.classList.add('selected')
+                    }
+
+                    noteList.appendChild(noteListItem)
+                }
+            )
+        }
+
+        applySelectedNoteToUi(note) {
+            this._applySelectedNoteToList(note)
+            this._applySelectedNoteToEditor(note)
+        }
+
+        _applySelectedNoteToList(note) {
+            const noteList = this.document.getElementById('note-list')
+            const previouslySelectedNote = noteList.getElementsByClassName('selected')
+            if (previouslySelectedNote.length === 1) {
+                previouslySelectedNote.classList.remove('selected')
+            }
+
+            Array.from(noteList.getElementsByTagName('li'))
+                .find(noteListItem => noteListItem.getAttribute('data-urn') === note.urn)
+                .classList.add('selected')
+        }
+
+        _applySelectedNoteToEditor(note) {
+
+        }
+    }
+
+    function createNoteClientByName(name, storage, uiRenderer) {
+        const createLocalNoteClient = (storage, uiRenderer) => new LocalNoteClient(
+            storage,
+            new LocalResourceRegistry('notes', storage),
+            new LocalNoteClientEventHandlers(notes => uiRenderer.applyNotesToUi(notes))
+        )
+
+        switch (name) {
+            case 'gist':
+                console.error('app initialization: gist note client is unsupported')
+                return null
+            case 'pastebin':
+                console.error('app initialization: pastebin note client is unsupported')
+                return null
+            case 'local':
+                return createLocalNoteClient(storage, uiRenderer)
+            default:
+                console.warn(
+                    `app initialization: unsupported note client ${name}. Falling back to using local client.`
+                )
+                return createLocalNoteClient(storage, uiRenderer)
+        }
     }
 
     function initializeApp(window) {
-        const localStorage = window.localStorage
+        const uiRenderer = new UiRenderer(window.document)
 
+        const localStorage = window.localStorage
         const settings = new Settings(localStorage)
 
-        settings.applyToUi(window.document)
+        uiRenderer.applySettingsToUi(settings)
 
-        const createNoteClientInstanceByName = (name, storage) => {
-            switch (name) {
-                case 'gist':
-                    return null
-                case 'pastebin':
-                    return null
-                case 'local':
-                    return new LocalNoteClient(
-                        storage,
-                        new LocalResourceRegistry('notes', storage)
-                    )
-                default:
-                    console.warn(
-                        `app initialization: unsupported note client ${name}. Falling back to using local client.`
-                    )
-                    return new LocalNoteClient(
-                        storage,
-                        new LocalResourceRegistry('notes', storage)
-                    )
-            }
-        }
-
-        window.app = new App(
-            createNoteClientInstanceByName(settings.getNoteClient(), localStorage),
+        const app = new App(
+            createNoteClientByName(
+                settings.getNoteClient(),
+                localStorage,
+                uiRenderer
+            ),
             settings
         )
 
+        uiRenderer.applySelectedNoteToUi(app.selectedNote)
+
+        settings.setEventHandlers(
+            new SettingsEventHandlers(
+                noteClient => {
+                    app.noteClient = createNoteClientByName(
+                        noteClient,
+                        localStorage,
+                        uiRenderer
+                    )
+                }
+            )
+        )
+
+        window.app = app
     }
 
     initializeApp(window)
 </script>
+
+<!--
+TODOs:
+display note
+    select note
+
+
+
+
+
+
+
+create note
+update note
+delete note
+-->
