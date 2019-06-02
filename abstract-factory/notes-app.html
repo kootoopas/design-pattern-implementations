@@ -1,0 +1,219 @@
+<style>
+    body {
+        background: #111;
+    }
+</style>
+
+<select id="note-client-select" onchange="window.app.settings.setNoteClient(this.options[this.selectedIndex].value)">
+    <option id="note-client-select-local" value="local">local</option>
+    <option id="note-client-select-gist" value="gist">gist</option>
+    <option id="note-client-select-pastebin" value="pastebin">pastebin</option>
+</select>
+
+<script>
+
+    class NoteClient {
+        create(contents) {
+            throw new Error('create not implemented')
+        }
+
+        update(urn, contents) {
+            throw new Error('update not implemented')
+        }
+
+        get(urn) {
+            throw new Error('get not implemented')
+        }
+
+        list() {
+            throw new Error('list not implemented')
+        }
+
+        delete(urn) {
+            throw new Error('delete not implemented')
+        }
+
+        authenticate() {
+            throw new Error('authenticate is not implemented')
+        }
+
+        requiresAuthentication() {
+            throw new Error('requiresAuthentication is not implemented')
+        }
+    }
+
+    class Note {
+        constructor(urn, contents) {
+            this.urn = urn
+            this.contents = contents
+        }
+    }
+
+    class LocalNoteClient extends NoteClient {
+        constructor(storage, registry) {
+            super()
+            this._storage = storage
+            this._registry = registry
+        }
+
+        create(contents) {
+            const urn = `notes/${window.crypto.getRandomValues(new Uint32Array(1))[0].toString()}`
+            this._registry.add(urn)
+            this._storage.setItem(urn, contents)
+        }
+
+        update(urn, contents) {
+            if (this._registry.resourceDoesNotExist(urn)) {
+                throw new Error(`${urn}: cannot update note that does not exist`)
+            }
+
+            return new Note(urn, this._storage.setItem(urn, contents))
+        }
+
+        list() {
+            return this._registry.list().map(
+                noteUrn => new Note(noteUrn, this._storage.getItem(noteUrn))
+            )
+        }
+
+        get(urn) {
+            if (this._registry.resourceDoesNotExist(urn)) {
+                throw new Error(`${urn}: cannot get note that does not exist`)
+            }
+
+            return new Note(urn, this._storage.getItem(urn))
+        }
+
+        delete(urn) {
+            if (this._registry.resourceDoesNotExist(urn)) {
+                throw new Error(`${urn}: cannot remove note that does not exist`)
+            }
+
+            this._storage.removeItem(urn)
+            this._registry.remove(urn)
+
+            return urn
+        }
+
+        requiresAuthentication() {
+            return false
+        }
+    }
+
+    class LocalResourceRegistry {
+        constructor(name, storage) {
+            this._name = name
+            this._storage = storage
+        }
+
+        add(urn) {
+            if (this.list().length === 0) {
+                this._storage.setItem(this._name, [urn])
+            } else {
+                this._storage.setItem(this._name, [...this.list(), urn].toString())
+            }
+        }
+
+        remove(urn) {
+            return this.list().filter(registeredUrn => registeredUrn !== urn)
+        }
+
+        resourceDoesNotExist(urn) {
+            return !this.list().some(registeredUrn => registeredUrn === urn)
+        }
+
+        list() {
+            const serializedUrns = this._storage.getItem(this._name)
+            if (!serializedUrns) {
+                return []
+            }
+
+            return serializedUrns.split(',')
+        }
+    }
+
+    class GistNoteClient extends NoteClient {
+        requiresAuthentication() {
+            return true
+        }
+    }
+
+    // TODO:
+    //  add gist client (auth, create, get, list,)
+    //  add pastebin client (auth,)
+
+    class App {
+        constructor(noteClient, settings) {
+            this.noteClient = noteClient
+            this.settings = settings
+        }
+    }
+
+    class Settings {
+        constructor(storage) {
+            this._storage = storage
+
+            const noteClient = this.getNoteClient()
+            if (noteClient == null) {
+                this.setNoteClient('local')
+            }
+        }
+
+        applyToUi(document) {
+            const selectedNoteClient = this.getNoteClient()
+            document
+                .getElementById(`note-client-select-${selectedNoteClient}`)
+                .setAttribute('selected', '')
+        }
+
+        setNoteClient(noteClient) {
+            if (!['local', 'gist', 'pastebin'].includes(noteClient)) {
+                throw new Error(`settings: ${noteClient} is not a valid note client`)
+            }
+
+            this._storage.setItem('settings/noteClient', noteClient)
+        }
+
+        getNoteClient() {
+            return this._storage.getItem('settings/noteClient')
+        }
+    }
+
+    function initializeApp(window) {
+        const localStorage = window.localStorage
+
+        const settings = new Settings(localStorage)
+
+        settings.applyToUi(window.document)
+
+        const createNoteClientInstanceByName = (name, storage) => {
+            switch (name) {
+                case 'gist':
+                    return null
+                case 'pastebin':
+                    return null
+                case 'local':
+                    return new LocalNoteClient(
+                        storage,
+                        new LocalResourceRegistry('notes', storage)
+                    )
+                default:
+                    console.warn(
+                        `app initialization: unsupported note client ${name}. Falling back to using local client.`
+                    )
+                    return new LocalNoteClient(
+                        storage,
+                        new LocalResourceRegistry('notes', storage)
+                    )
+            }
+        }
+
+        window.app = new App(
+            createNoteClientInstanceByName(settings.getNoteClient(), localStorage),
+            settings
+        )
+
+    }
+
+    initializeApp(window)
+</script>
