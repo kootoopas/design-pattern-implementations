@@ -28,16 +28,26 @@
 
     #note-editor {
         flex: 80%;
+        width: 100%;
+        height: 100%;
+        border-left: 1px solid #222;
+        background-color: #111;
+        padding: 0 10em;
+        color: #eee;
+    }
+
+    #note-editor-title {
+        height: 3%;
+        margin: 0;
+        margin-bottom: 1em;
     }
 
     #note-text-editor {
         width: 100%;
-        height: 100%;
-        border: 0;
-        border-left: 1px solid #222;
-        background-color: #111;
+        height: 94.7%;
         color: #eee;
-        padding: 1em 2em;
+        border: 0;
+        background: transparent;
         line-height: 1.5;
         font: 400 1em serif;
     }
@@ -55,8 +65,6 @@
     }
 </style>
 
-
-
 <div class="wrapper top-bar">
     <select id="note-client-select" onchange="window.app.settings.setNoteClient(this.options[this.selectedIndex].value)">
         <option id="note-client-select-local" value="local">local</option>
@@ -69,9 +77,11 @@
     <ul id="note-list"></ul>
 
     <main id="note-editor">
+        <h2 id="note-editor-title">dfsa</h2>
         <textarea id="note-text-editor"></textarea>
     </main>
 </div>
+
 <script>
 
     class NoteClient {
@@ -112,13 +122,11 @@
     }
 
     class LocalNoteClient extends NoteClient {
-        constructor(storage, registry, eventHandlers) {
+        constructor(storage, registry) {
             super()
             this._storage = storage
             this._registry = registry
-            this._eventHandlers = eventHandlers
-
-            this._emitLocalNoteChangeEvent()
+            this._eventHandlers = undefined
         }
 
         create(contents) {
@@ -171,6 +179,12 @@
 
         _emitLocalNoteChangeEvent() {
             this._eventHandlers.localNoteChangeHandler(this.list())
+        }
+
+        setEventHandlers(eventHandlers) {
+            this._eventHandlers = eventHandlers
+
+            this._emitLocalNoteChangeEvent()
         }
     }
 
@@ -233,6 +247,22 @@
             const notes = this.noteClient.list()
             this.selectedNote = notes.length > 0 ? notes[0] : undefined;
         }
+
+        setEventHandlers(eventHandlers) {
+            this._eventHandlers = eventHandlers
+        }
+
+        selectNote(urn) {
+            const notes = this.noteClient.list()
+            this.selectedNote = notes.find(note => note.urn === urn)
+            this._eventHandlers.noteSelectHandler(this.selectedNote)
+        }
+    }
+
+    class AppEventHandlers {
+        constructor(noteSelectHandler) {
+            this.noteSelectHandler = noteSelectHandler
+        }
     }
 
     class Settings {
@@ -283,7 +313,7 @@
                 .setAttribute('selected', '')
         }
 
-        applyNotesToUi(notes) {
+        applyNotesToUi(notes, selectNoteCallback) {
             const noteList = this.document.getElementById('note-list')
             const selectedNotes = noteList.getElementsByClassName('selected')
             let selectedNoteUrn = undefined
@@ -296,6 +326,10 @@
                 note => {
                     const noteListItem = this.document.createElement('li')
                     noteListItem.setAttribute('data-urn', note.urn)
+                    noteListItem.addEventListener('click', event => {
+                        const noteUrn = event.target.getAttribute('data-urn')
+                        selectNoteCallback(noteUrn)
+                    })
                     noteListItem.appendChild(this.document.createTextNode(note.urn))
                     if (note.urn === selectedNoteUrn) {
                         noteListItem.classList.add('selected')
@@ -313,9 +347,9 @@
 
         _applySelectedNoteToList(note) {
             const noteList = this.document.getElementById('note-list')
-            const previouslySelectedNote = noteList.getElementsByClassName('selected')
-            if (previouslySelectedNote.length === 1) {
-                previouslySelectedNote.classList.remove('selected')
+            const previouslySelectedNotes = noteList.getElementsByClassName('selected')
+            if (previouslySelectedNotes.length === 1) {
+                previouslySelectedNotes[0].classList.remove('selected')
             }
 
             Array.from(noteList.getElementsByTagName('li'))
@@ -324,15 +358,15 @@
         }
 
         _applySelectedNoteToEditor(note) {
-
+            const noteTextEditor = this.document.getElementById('note-text-editor')
+            noteTextEditor.value = note.contents
         }
     }
 
-    function createNoteClientByName(name, storage, uiRenderer) {
-        const createLocalNoteClient = (storage, uiRenderer) => new LocalNoteClient(
+    function createNoteClientByName(name, storage) {
+        const createLocalNoteClient = storage => new LocalNoteClient(
             storage,
-            new LocalResourceRegistry('notes', storage),
-            new LocalNoteClientEventHandlers(notes => uiRenderer.applyNotesToUi(notes))
+            new LocalResourceRegistry('notes', storage)
         )
 
         switch (name) {
@@ -343,12 +377,12 @@
                 console.error('app initialization: pastebin note client is unsupported')
                 return null
             case 'local':
-                return createLocalNoteClient(storage, uiRenderer)
+                return createLocalNoteClient(storage)
             default:
                 console.warn(
                     `app initialization: unsupported note client ${name}. Falling back to using local client.`
                 )
-                return createLocalNoteClient(storage, uiRenderer)
+                return createLocalNoteClient(storage)
         }
     }
 
@@ -358,7 +392,6 @@
         const localStorage = window.localStorage
         const settings = new Settings(localStorage)
 
-        uiRenderer.applySettingsToUi(settings)
 
         const app = new App(
             createNoteClientByName(
@@ -369,7 +402,20 @@
             settings
         )
 
-        uiRenderer.applySelectedNoteToUi(app.selectedNote)
+        app.noteClient.setEventHandlers(
+            new LocalNoteClientEventHandlers(
+                notes => uiRenderer.applyNotesToUi(
+                    notes,
+                    noteUrn => app.selectNote(noteUrn)
+                )
+            )
+        )
+
+        app.setEventHandlers(
+            new AppEventHandlers(
+                note => uiRenderer.applySelectedNoteToUi(note)
+            )
+        )
 
         settings.setEventHandlers(
             new SettingsEventHandlers(
@@ -382,6 +428,9 @@
                 }
             )
         )
+
+        uiRenderer.applySelectedNoteToUi(app.selectedNote)
+        uiRenderer.applySettingsToUi(settings)
 
         window.app = app
     }
