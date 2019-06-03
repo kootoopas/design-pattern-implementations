@@ -6,6 +6,22 @@
         font-size: 14px;
     }
 
+    .top-bar button {
+        margin: .5em 1em;
+    }
+
+    #note-client-select {
+        margin: .5em 1em;
+    }
+
+    .wrapper {
+        display: flex;
+    }
+
+    .wrapper.view {
+        height: 95%;
+    }
+
     #note-list {
         flex: 20%;
         list-style: none;
@@ -36,10 +52,13 @@
         color: #eee;
     }
 
-    #note-editor-title {
-        height: 3%;
-        margin: 0;
+    .note-editor-top-bar {
         margin-bottom: 1em;
+        height: 6%;
+    }
+
+    #note-editor-title {
+        margin: 0;
     }
 
     #note-text-editor {
@@ -51,18 +70,6 @@
         line-height: 1.5;
         font: 400 1em serif;
     }
-
-    #note-client-select {
-        margin: .5em 1em;
-    }
-
-    .wrapper {
-        display: flex;
-    }
-
-    .wrapper.view {
-        height: 95%;
-    }
 </style>
 
 <div class="wrapper top-bar">
@@ -71,14 +78,23 @@
         <option id="note-client-select-gist" value="gist">gist</option>
         <option id="note-client-select-pastebin" value="pastebin">pastebin</option>
     </select>
+    <button onclick="window.app.initializeNewNoteEditor()">+</button>
 </div>
 
 <div class="wrapper view">
     <ul id="note-list"></ul>
 
     <main id="note-editor">
-        <h2 id="note-editor-title"></h2>
-        <textarea id="note-text-editor"></textarea>
+        <div class="note-editor-top-bar wrapper">
+            <h2 id="note-editor-title"></h2>
+        </div>
+        <textarea
+                id="note-text-editor"
+                onblur="window.app.persistNote(
+                    window.document.getElementById('note-editor').getAttribute('data-urn'),
+                    this.value
+                )"
+        ></textarea>
     </main>
 </div>
 
@@ -126,7 +142,7 @@
             super()
             this._storage = storage
             this._registry = registry
-            this._eventHandlers = undefined
+            this._eventHandlers = null
         }
 
         create(contents) {
@@ -134,6 +150,8 @@
             this._registry.add(urn)
             this._storage.setItem(urn, contents)
             this._emitLocalNoteChangeEvent()
+
+            return new Note(urn, contents)
         }
 
         update(urn, contents) {
@@ -141,10 +159,10 @@
                 throw new Error(`${urn}: cannot update note that does not exist`)
             }
 
-            const note = new Note(urn, this._storage.setItem(urn, contents))
+            this._storage.setItem(urn, contents)
             this._emitLocalNoteChangeEvent()
 
-            return note
+            return new Note(urn, contents)
         }
 
         list() {
@@ -245,7 +263,7 @@
 
         _setInitiallySelectedNote() {
             const notes = this.noteClient.list()
-            this.selectedNote = notes.length > 0 ? notes[0] : undefined;
+            this.selectedNote = notes.length > 0 ? notes[0] : null;
         }
 
         setEventHandlers(eventHandlers) {
@@ -257,21 +275,39 @@
             this.selectedNote = notes.find(note => note.urn === urn)
             this._eventHandlers.noteSelectHandler(this.selectedNote)
         }
+
+        persistNote(urn, contents) {
+            if (urn === 'null') {
+                if (!contents.trim()) {
+                    return
+                }
+
+                const note = this.noteClient.create(contents)
+                this.selectedNote = note
+                this._eventHandlers.noteSelectHandler(note)
+            }
+        }
+
+        initializeNewNoteEditor() {
+            this.selectedNote = null
+            this._eventHandlers.newNoteInitializationHandler()
+        }
     }
 
     class AppEventHandlers {
-        constructor(noteSelectHandler) {
+        constructor(noteSelectHandler, newNoteInitializationHandler) {
             this.noteSelectHandler = noteSelectHandler
+            this.newNoteInitializationHandler = newNoteInitializationHandler
         }
     }
 
     class Settings {
         constructor(storage) {
             this._storage = storage
-            this._eventHandlers = undefined
+            this._eventHandlers = null
 
             const noteClient = this.getNoteClient()
-            if (noteClient == null) {
+            if (noteClient === null) {
                 this.setNoteClient('local')
             }
         }
@@ -316,7 +352,7 @@
         applyNotesToUi(notes, selectNoteCallback) {
             const noteList = this.document.getElementById('note-list')
             const selectedNotes = noteList.getElementsByClassName('selected')
-            let selectedNoteUrn = undefined
+            let selectedNoteUrn = null
             if (selectedNotes.length === 1) {
                 selectedNoteUrn = selectedNotes[0].getAttribute('data-urn')
             }
@@ -352,14 +388,27 @@
                 previouslySelectedNotes[0].classList.remove('selected')
             }
 
-            Array.from(noteList.getElementsByTagName('li'))
-                .find(noteListItem => noteListItem.getAttribute('data-urn') === note.urn)
-                .classList.add('selected')
+            if (note) {
+                Array.from(noteList.getElementsByTagName('li'))
+                    .find(noteListItem => noteListItem.getAttribute('data-urn') === note.urn)
+                    .classList.add('selected')
+            }
         }
 
         _applySelectedNoteToEditor(note) {
-            this.document.getElementById('note-editor-title').innerText = note.urn
-            this.document.getElementById('note-text-editor').value = note.contents
+            let applicableNoteUrn
+            let applicableNoteContents
+            if (note) {
+                applicableNoteUrn = note.urn
+                applicableNoteContents = note.contents
+            } else {
+                applicableNoteUrn = null
+                applicableNoteContents = null
+            }
+
+            this.document.getElementById('note-editor').setAttribute('data-urn', applicableNoteUrn)
+            this.document.getElementById('note-editor-title').innerText = applicableNoteUrn
+            this.document.getElementById('note-text-editor').value = applicableNoteContents
         }
     }
 
@@ -413,7 +462,11 @@
 
         app.setEventHandlers(
             new AppEventHandlers(
-                note => uiRenderer.applySelectedNoteToUi(note)
+                note => uiRenderer.applySelectedNoteToUi(note),
+                () => {
+                    uiRenderer.applySelectedNoteToUi(null)
+                    window.document.getElementById('note-text-editor').focus()
+                }
             )
         )
 
@@ -440,15 +493,6 @@
 
 <!--
 TODOs:
-display note
-    select note
-
-
-
-
-
-
-
 create note
 update note
 delete note
