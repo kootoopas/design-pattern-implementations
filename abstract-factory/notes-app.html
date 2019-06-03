@@ -31,6 +31,7 @@
 
     #note-list li {
         padding: .5em 1em;
+        height: 6.143em;
     }
 
     #note-list li:hover {
@@ -40,6 +41,10 @@
     #note-list li.selected {
         background-color: #222;
         color: goldenrod;
+    }
+
+    .note-list-item-contents-cutoff {
+        font-size: .85em;
     }
 
     #note-editor {
@@ -387,11 +392,11 @@
                 note => {
                     const noteListItem = this.document.createElement('li')
                     noteListItem.setAttribute('data-urn', note.urn)
-                    noteListItem.addEventListener('click', event => {
-                        const noteUrn = event.target.getAttribute('data-urn')
-                        selectNoteCallback(noteUrn)
-                    })
+                    noteListItem.addEventListener('click', () => selectNoteCallback(note.urn))
                     noteListItem.appendChild(this.document.createTextNode(note.urn))
+
+                    this._applyContentsToCutoffElementOfNoteItem(note.contents, noteListItem)
+
                     if (note.urn === selectedNoteUrn) {
                         noteListItem.classList.add('selected')
                     }
@@ -400,6 +405,16 @@
                 }
             )
         }
+
+        _applyContentsToCutoffElementOfNoteItem(noteContents, noteListItem) {
+            const contentsCutoffElement = this.document.createElement('p')
+            contentsCutoffElement.classList.add('note-list-item-contents-cutoff')
+            const contentsCutoff = `${noteContents.slice(0, 120)}${noteContents.length > 120 ? '...' : ''}`
+            contentsCutoffElement.appendChild(this.document.createTextNode(contentsCutoff))
+
+            noteListItem.appendChild(contentsCutoffElement)
+        }
+
 
         applySelectedNoteToUi(note) {
             this._applySelectedNoteToList(note)
