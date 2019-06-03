@@ -84,9 +84,12 @@
 <div class="wrapper view">
     <ul id="note-list"></ul>
 
-    <main id="note-editor">
+    <main id="note-editor" data-urn="null">
         <div class="note-editor-top-bar wrapper">
             <h2 id="note-editor-title"></h2>
+            <button onclick="
+                window.app.deleteNote(window.document.getElementById('note-editor').getAttribute('data-urn'))
+            ">x</button>
         </div>
         <textarea
                 id="note-text-editor"
@@ -227,7 +230,7 @@
         }
 
         remove(urn) {
-            return this.list().filter(registeredUrn => registeredUrn !== urn)
+            this._storage.setItem(this._name, this.list().filter(registeredUrn => registeredUrn !== urn).toString())
         }
 
         resourceDoesNotExist(urn) {
@@ -258,10 +261,10 @@
         constructor(noteClient, settings) {
             this.noteClient = noteClient
             this.settings = settings
-            this._setInitiallySelectedNote()
+            this._resetSelectedNote()
         }
 
-        _setInitiallySelectedNote() {
+        _resetSelectedNote() {
             const notes = this.noteClient.list()
             this.selectedNote = notes.length > 0 ? notes[0] : null;
         }
@@ -271,8 +274,7 @@
         }
 
         selectNote(urn) {
-            const notes = this.noteClient.list()
-            this.selectedNote = notes.find(note => note.urn === urn)
+            this.selectedNote = this.noteClient.get(urn)
             this._eventHandlers.noteSelectHandler(this.selectedNote)
         }
 
@@ -296,6 +298,19 @@
 
         _updateNote(urn, contents) {
             this.noteClient.update(urn, contents)
+        }
+
+        deleteNote(urn) {
+            if (urn === 'null') {
+                console.warn('attempt to delete note with null urn')
+                return
+            }
+
+            this.noteClient.delete(urn)
+            if (this.selectedNote.urn === urn) {
+                this._resetSelectedNote()
+                this._eventHandlers.noteSelectHandler(this.selectedNote)
+            }
         }
 
         initializeNewNoteEditor() {
