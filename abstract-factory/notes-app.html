@@ -278,14 +278,24 @@
 
         persistNote(urn, contents) {
             if (urn === 'null') {
-                if (!contents.trim()) {
-                    return
-                }
-
-                const note = this.noteClient.create(contents)
-                this.selectedNote = note
-                this._eventHandlers.noteSelectHandler(note)
+                this._createNote(urn, contents)
+            } else {
+                this._updateNote(urn, contents)
             }
+        }
+
+        _createNote(urn, contents) {
+            if (!contents.trim()) {
+                return
+            }
+
+            const note = this.noteClient.create(contents)
+            this.selectedNote = note
+            this._eventHandlers.noteSelectHandler(note)
+        }
+
+        _updateNote(urn, contents) {
+            this.noteClient.update(urn, contents)
         }
 
         initializeNewNoteEditor() {
