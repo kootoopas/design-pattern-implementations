@@ -1,0 +1,227 @@
+<style>
+    body {
+        margin: 0;
+        background: #142221;
+    }
+</style>
+
+<canvas width="1024" height="768" id="canvas"></canvas>
+
+<script>
+
+    class World {
+        draw(window, ctx, scene) {
+            window.requestAnimationFrame(() => new World().draw(window, ctx, scene))
+
+            ctx.clearRect(0, 0, window.innerWidth, window.innerHeight)
+            scene.draw()
+        }
+    }
+
+    class Scene {
+        constructor() {
+            this._graphics = []
+            this._entities = []
+        }
+
+        draw() {
+            this._graphics.forEach(graphic => graphic.draw())
+        }
+
+        addGraphic(graphic) {
+            this._graphics.push(graphic)
+        }
+
+        addEntity(entity) {
+            this._graphics.push(entity)
+            this._entities.push(entity)
+        }
+    }
+
+    class BattleScene extends Scene {
+        constructor(targetService) {
+            super()
+            this._targetService = targetService
+        }
+
+        addEntity(entity) {
+            super.addEntity(entity);
+
+            if (entity instanceof Target) {
+                this._targetService.addTargetable(entity)
+            }
+        }
+    }
+
+    class Graphic {
+        constructor(ctx, x, y, w, h) {
+            this.ctx = ctx
+            this.x = x
+            this.y = y
+            this.w = w
+            this.h = h
+        }
+
+        draw() {
+            throw new Error('graphic: draw not implemented')
+        }
+    }
+
+    class Entity extends Graphic {
+        constructor(ctx, x, y, w, h) {
+            super(ctx, x, y, w, h)
+            this.id = this._getUuidv4()
+        }
+
+
+        _getUuidv4() {
+            return ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c =>
+                (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)
+            )
+        }
+
+        draw() {
+            throw new Error(`entity ${this.id}: draw not implemented`)
+        }
+    }
+
+    class Target extends Entity {
+        constructor(ctx, entity) {
+            super(ctx, entity.x, entity.y, entity.w, entity.h)
+            this._entity = entity
+            this._targeted = false
+        }
+
+        target() {
+            this._targeted = true
+        }
+
+        detarget() {
+            this._targeted = false
+        }
+
+        draw() {
+            this._entity.draw()
+
+            // Wrapped entity is decorated with the target rendering code:
+            if (this._targeted) {
+                this.ctx.beginPath()
+                this.ctx.rect(this.x, this.y, this.w, this.h)
+                this.ctx.lineWidth = 4
+                this.ctx.strokeStyle = 'darkred'
+                this.ctx.stroke()
+            }
+        }
+    }
+
+    class TargetService {
+        constructor(window) {
+            this._targetables = []
+            this._target = null
+
+            this._initializeTargetTraversalHandler(window)
+        }
+
+        addTargetable(targetable) {
+            this._targetables.push(targetable)
+
+            // Target first targetable entity.
+            if (this._target === null) {
+                this._setTarget(targetable)
+            }
+        }
+
+        _initializeTargetTraversalHandler(window) {
+            const targetTraversalHandler = (e) => {
+                if (e.code === 'ArrowRight') {
+                    this._targetNextTargetable()
+                } else if (e.code === 'ArrowLeft') {
+                    this._targetPreviousTargetable()
+                }
+            }
+
+            window.addEventListener('keydown', targetTraversalHandler)
+        }
+
+        _targetNextTargetable() {
+            const targetIndex = this._targetables.findIndex(targetable => targetable.id === this._target.id)
+            const newTargetIndex = (targetIndex + 1) % this._targetables.length
+            this._setTarget(this._targetables[newTargetIndex])
+        }
+
+        _targetPreviousTargetable() {
+            const targetIndex = this._targetables.findIndex(targetable => targetable.id === this._target.id)
+            const newTargetIndex = targetIndex - 1 < 0 ? this._targetables.length - 1 : targetIndex - 1
+            this._setTarget(this._targetables[newTargetIndex])
+        }
+
+        _setTarget(target) {
+            if (this._target) {
+                this._target.detarget()
+            }
+
+            target.target()
+            this._target = target
+        }
+    }
+
+    class WorldTester {
+        rendersScene(window, ctx) {
+            new World().draw(window, ctx, createSceneWithGraphics())
+        }
+
+        rendersSceneWithTargets() {
+            new World().draw(window, ctx, createSceneWithTargets())
+        }
+    }
+
+    function createSceneWithGraphics() {
+        class SquareGraphic extends Graphic {
+            draw() {
+                this.ctx.beginPath()
+                this.ctx.rect(this.x, this.y, this.w, this.h)
+                this.ctx.fillStyle = 'pink'
+                this.ctx.fill()
+            }
+        }
+
+        const scene = new Scene()
+
+        scene.addGraphic(new SquareGraphic(ctx, 50, 50, 50, 50))
+        scene.addGraphic(new SquareGraphic(ctx, 150, 50, 50, 100))
+        scene.addGraphic(new SquareGraphic(ctx, 250, 50, 50, 200))
+        scene.addGraphic(new SquareGraphic(ctx, 350, 50, 50, 400))
+
+        return scene
+    }
+
+    function createSceneWithTargets() {
+        class Block extends Entity {
+            draw() {
+                this.ctx.beginPath()
+                this.ctx.rect(this.x, this.y, this.w, this.h)
+                this.ctx.fillStyle = 'white'
+                this.ctx.fill()
+            }
+        }
+
+        const scene = new BattleScene(new TargetService(window))
+
+        scene.addEntity(new Block(ctx, 50, 50, 50, 50))
+        scene.addEntity(new Block(ctx, 150, 50, 50, 100))
+        scene.addEntity(new Target(ctx, new Block(ctx, 250, 50, 50, 200)))
+        scene.addEntity(new Target(ctx, new Block(ctx, 350, 50, 50, 400)))
+        scene.addEntity(new Target(ctx, new Block(ctx, 450, 50, 10, 50)))
+        scene.addEntity(new Target(ctx, new Block(ctx, 550, 50, 100, 50)))
+
+        return scene
+    }
+
+
+    const canvas = window.document.getElementById('canvas')
+    canvas.width = window.innerWidth
+    canvas.height = window.innerHeight
+    const ctx = canvas.getContext('2d')
+
+    new WorldTester().rendersSceneWithTargets(window, ctx)
+</script>
