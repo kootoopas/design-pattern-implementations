@@ -1,0 +1,112 @@
+<textarea id='text' cols='140' rows='10' onkeyup='analyzeText(this.value)'></textarea>
+<div style='display: flex'>
+    <div id='word-count' style='flex: 1'></div>
+    <div id='word-frequency' style='flex: 1'></div>
+</div>
+<script>
+    class TextAnalyzer {
+      analyze(line) {
+        throw new Error('lacks analysis adder')
+      }
+    }
+
+    class WordCounter extends TextAnalyzer {
+      constructor() {
+        super()
+        this.paragraphs = 0
+        this.lines = 0
+        this.words = 0
+        this.chars = 0
+
+        this.previousLine = null
+      }
+
+      analyze(line) {
+        if (line.trim() === '') {
+          // Assumes text ends on newline.
+          if (this.previousLine && this.previousLine.trim() !== '') {
+            this.paragraphs = this.paragraphs + 1
+          }
+        }
+
+        this.lines = this.lines + 1
+        this.words = this.words + line.split(' ').filter(word => word !== '').length
+        this.chars = this.chars + line.length
+
+        this.previousLine = line
+      }
+
+      getCounts() {
+        return new Map([
+          ['paragraphs', this.paragraphs],
+          ['lines', this.lines],
+          ['words', this.words],
+          ['chars', this.chars]
+        ])
+      }
+    }
+
+    class WordFrequencyCounter extends TextAnalyzer {
+      constructor() {
+        super()
+        this.frequencies = new Map()
+      }
+
+      analyze(line) {
+        const words = line.split(' ').filter(word => word !== '')
+        words.forEach(word => {
+          word = word.toLowerCase()
+          // TODO: Add start and end symbol (such as for periods and commas) regex filter
+          this.frequencies.set(
+            word,
+            this.frequencies.has(word)
+              ? this.frequencies.get(word) + 1
+              : 1
+          )
+        })
+      }
+
+      getFrequencies() {
+        return this.frequencies
+      }
+    }
+
+    class TextParser {
+      constructor(wordAnalyzer) {
+        this.wordAnalyzer = wordAnalyzer
+      }
+
+      parse(text) {
+        text.split('\n').forEach(line => {
+          this.wordAnalyzer.analyze(line)
+        })
+      }
+    }
+
+    function analyzeText(text) {
+      // analyzeText function is client
+
+      // concrete builder #1
+      const counter = new WordCounter()
+
+      // parser is director
+      const parser = new TextParser(null)
+
+      parser.wordAnalyzer = counter
+      parser.parse(text)
+
+      // concrete builder #2
+      const frequencyCounter = new WordFrequencyCounter()
+
+      parser.wordAnalyzer = frequencyCounter
+      parser.parse(text)
+
+      // products (counts and frequencies) are retrieved and displayed
+      document.getElementById('word-count').innerHTML = [...counter.getCounts()].reduce(
+        (html, count) => `${html}<p>${count[0]}: ${count[1]}</p>`, ''
+      )
+      document.getElementById('word-frequency').innerHTML = [...frequencyCounter.getFrequencies()]
+        .sort((a, b) => b[1] - a[1])
+        .reduce((html, count) => `${html}<p>${count[0]}: ${count[1]}</p>`, '')
+    }
+</script>
