@@ -101,6 +101,8 @@
       parser.wordAnalyzer = frequencyCounter
       parser.parse(text)
 
+      // As you can see, client is completely unaware of build (analysis) process.
+
       // products (counts and frequencies) are retrieved and displayed
       document.getElementById('word-count').innerHTML = [...counter.getCounts()].reduce(
         (html, count) => `${html}<p>${count[0]}: ${count[1]}</p>`, ''
