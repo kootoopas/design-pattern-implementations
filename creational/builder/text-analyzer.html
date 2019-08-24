@@ -1,12 +1,52 @@
-<textarea id='text' cols='140' rows='10' onkeyup='analyzeText(this.value)'></textarea>
-<div style='display: flex'>
-    <div id='word-count' style='flex: 1'></div>
-    <div id='word-frequency' style='flex: 1'></div>
+<style>
+    body {
+        font-family: "Helvetica Neue", "Helvetica", arial, sans-serif;
+    }
+
+    .analyses {
+        display: flex;
+    }
+
+    .analysis {
+        background: #eee;
+        margin: .5em;
+        padding: .5em;
+    }
+
+    .text-input {
+        background: navajowhite;
+    }
+
+    .text-editor {
+        min-height: 10em;
+    }
+
+</style>
+
+<input class='text-input' placeholder='filter' onkeyup='filterText(document.getElementById("text").innerText, this.value)'>
+<div id='text' class='text-input text-editor' onkeyup='analyzeText(this.innerText)' contenteditable='true'></div>
+<div style='display: flex' class='analyses'>
+    <div class='analysis' id='word-count' style='flex: 1'>
+        <h3 class='heading'></h3>
+        <div class='results'></div>
+    </div>
+    <div class='analysis' id='word-frequency' style='flex: 1'>
+        <h3 class='heading'></h3>
+        <div class='results'></div>
+    </div>
+    <div class='analysis' id='word-filter' style='flex: 1'>
+        <h3 class='heading'></h3>
+        <div class='results'></div>
+    </div>
 </div>
 <script>
-    class TextAnalyzer {
+
+  /**
+   * Used as abstract builder class to define builder interface.
+   */
+  class TextAnalyzer {
       analyze(line) {
-        throw new Error('lacks analysis adder')
+        throw new Error('lacks analysis appender')
       }
     }
 
@@ -71,6 +111,40 @@
       }
     }
 
+    class Filterer extends TextAnalyzer {
+      constructor(filter) {
+        super()
+        this.filter = filter
+        this.length = 0
+        this.areas = new Map()
+      }
+
+      analyze(line) {
+        let remainder = line
+        while (remainder.lastIndexOf(this.filter) !== -1) {
+          const filterIndex = remainder.lastIndexOf(this.filter)
+          this.areas.set(
+            this.length + filterIndex,
+            this.length + filterIndex + this.filter.length - 1
+          )
+          remainder = remainder.substring(0, filterIndex)
+        }
+
+        this.length = this.length + line.length
+      }
+
+      getAreas() {
+        const areas = new Map()
+        ;[...this.areas.keys()]
+          .sort((a, b) => a - b)
+          .forEach((start) => {
+            areas.set(start, this.areas.get(start))
+          })
+
+        return areas
+      }
+    }
+
     class TextParser {
       constructor(wordAnalyzer) {
         this.wordAnalyzer = wordAnalyzer
@@ -84,6 +158,18 @@
     }
 
     function analyzeText(text) {
+      if (text === '') {
+        document.getElementById('word-count')
+          .getElementsByClassName('heading')[0].innerHTML = ''
+        document.getElementById('word-count')
+          .getElementsByClassName('results')[0].innerHTML = ''
+        document.getElementById('word-frequency')
+          .getElementsByClassName('heading')[0].innerHTML = ''
+        document.getElementById('word-filter')
+          .getElementsByClassName('results')[0].innerHTML = ''
+        return
+      }
+
       // analyzeText function is client
 
       // concrete builder #1
@@ -101,14 +187,51 @@
       parser.wordAnalyzer = frequencyCounter
       parser.parse(text)
 
-      // As you can see, client is completely unaware of build (analysis) process.
+      // As you see, client is completely unaware of build (analysis) process.
 
       // products (counts and frequencies) are retrieved and displayed
-      document.getElementById('word-count').innerHTML = [...counter.getCounts()].reduce(
+      document.getElementById('word-count')
+        .getElementsByClassName('heading')[0].innerHTML = 'Counts: '
+      document.getElementById('word-count')
+        .getElementsByClassName('results')[0].innerHTML = [...counter.getCounts()].reduce(
         (html, count) => `${html}<p>${count[0]}: ${count[1]}</p>`, ''
       )
-      document.getElementById('word-frequency').innerHTML = [...frequencyCounter.getFrequencies()]
+
+      document.getElementById('word-frequency')
+        .getElementsByClassName('heading')[0].innerHTML = 'Frequencies: '
+      document.getElementById('word-frequency')
+        .getElementsByClassName('results')[0].innerHTML = [...frequencyCounter.getFrequencies()]
         .sort((a, b) => b[1] - a[1])
-        .reduce((html, count) => `${html}<p>${count[0]}: ${count[1]}</p>`, '')
+        .reduce((html, count) => `${html}<p>${count[0].trim() === '' ? `"${count[0]}"` : count[0]}: ${count[1]}</p>`, '')
+    }
+
+    function filterText(text, filter) {
+      if (filter === '') {
+        document.getElementById('word-filter')
+          .getElementsByClassName('heading')[0].innerHTML = ''
+        document.getElementById('word-filter')
+          .getElementsByClassName('results')[0].innerHTML = ''
+        return
+      }
+
+
+      // concrete builder #3
+      const filterer = new Filterer(filter)
+
+      const parser = new TextParser(filterer)
+      parser.parse(text)
+
+      const areas = filterer.getAreas()
+
+      document
+        .getElementById('word-filter')
+        .getElementsByClassName('heading')[0].innerHTML = areas.size > 0
+        ? `${areas.size} ${areas.size === 1 ? 'match' : 'matches'} for "${filter}":`
+        : `No matches for "${filter}"`
+
+      document
+        .getElementById('word-filter')
+        .getElementsByClassName('results')[0].innerHTML = [...areas]
+          .reduce((html, area) => `${html}<p>${area[0]}..${area[1]}</p>`, '')
     }
 </script>
