@@ -1,0 +1,203 @@
+<style>
+    .input {
+        width: 30em;
+    }
+
+    .results-containers {
+        display: flex;
+    }
+
+    .results-container {
+        flex: 1;
+        margin: 0.5em;
+    }
+
+    .results {
+    }
+
+    .result {
+        margin-bottom: .25em;
+    }
+
+    .result small {
+        color: gray;
+        margin-left: .15em;
+    }
+</style>
+
+<div id='root'></div>
+
+<script src='https://unpkg.com/react@16/umd/react.development.js' crossorigin></script>
+<script src='https://unpkg.com/react-dom@16/umd/react-dom.development.js' crossorigin></script>
+<script>
+  const e = React.createElement
+
+  class Root extends React.Component {
+    constructor(props) {
+      super(props)
+      this.state = {
+        query: '',
+      }
+    }
+
+    onQueryKeyDown(e) {
+      if (e.key === 'Enter' && e.target.value.trim().length > 0) {
+        this.setState({query: e.target.value})
+      }
+    }
+
+    render() {
+      return e(
+        'div',
+        {},
+        e('input', {
+          className: 'input',
+          type: 'text',
+          onKeyDown: e => this.onQueryKeyDown(e),
+          placeholder: 'search a book by title, author, etc.',
+        }),
+        e('div', { className: 'results-containers' },
+          [
+            e(
+              OpenLibraryBookResults,
+              { key: 'open-library', label: 'Open Library', query: this.state.query },
+            ),
+            e(
+              PenguinRandomHouseBookResults,
+              { key: 'penguin-random-house', label: 'Penguin Random House', query: this.state.query },
+            ),
+          ],
+        ),
+      )
+    }
+  }
+
+  // Abstract class
+  class BookResults extends React.Component {
+    constructor(props) {
+      super(props)
+      this.state = {
+        results: [],
+      }
+      this.bookSearcher = null
+    }
+
+    componentDidMount() {
+      this.bookSearcher = this.createBookSearcher()
+      this.searchBooks()
+    }
+
+    /**
+     * Factory method template method.
+     */
+    createBookSearcher() {
+      throw new Error('book results subclass should implement book searcher creator')
+    }
+
+    searchBooks() {
+      if (!this.props.query) {
+        return
+      }
+
+      this.bookSearcher.searchBooks(this.props.query).then((results) => {
+        this.setState({results})
+      })
+    }
+
+    componentDidUpdate(prevProps, prevState, snapshot) {
+      if (prevProps.query !== this.props.query && this.bookSearcher) {
+        this.searchBooks()
+      }
+    }
+
+    render() {
+      return e(
+        'div',
+        { className: 'results-container' },
+        e('h2', {}, `${this.props.label} (${this.state.results.length})`),
+        e('div', {className: 'results'}, this.state.results.map(result => {
+          const authorLabel = result.author ? result.author : '(author name missing)'
+
+          return e(
+            'div',
+            {className: 'result'},
+            result.title,
+            ' ',
+            e('small', {}, authorLabel),
+          )
+        })),
+      )
+    }
+  }
+
+  /**
+   * Subclass implements concrete factory method.
+   */
+  class OpenLibraryBookResults extends BookResults {
+    createBookSearcher() {
+      return new OpenLibraryBookSearcher()
+    }
+  }
+
+  class PenguinRandomHouseBookResults extends BookResults {
+    createBookSearcher() {
+      return new PenguinRandomHouseBookSearcher()
+    }
+  }
+
+
+  /**
+   * Book searcher interface. Product of the factory method. Its class hierarchy is parallel to the
+   * BookResults class hierarchy.
+   */
+  class BookSearcher {
+    async searchBooks(query) {
+      throw new Error('book getter subclass should implement searchBooks method')
+    }
+  }
+
+  class OpenLibraryBookSearcher extends BookSearcher {
+    async searchBooks(query) {
+      const request = new Request(
+        `http://openlibrary.org/search.json?q=${query}`,
+        {method: 'GET'},
+      )
+
+      const response = await fetch(request)
+      const json = await response.json()
+
+      if (!response.ok || !json || !Array.isArray(json.docs)) {
+        return []
+      }
+
+      return json.docs.map(doc => ({
+        title: doc.title,
+        author: doc.author_name,
+      }))
+    }
+  }
+
+  class PenguinRandomHouseBookSearcher extends BookSearcher {
+    async searchBooks(query) {
+      const request = new Request(
+        `https://reststop.randomhouse.com/resources/works/?start=0&max=0&expandLevel=1&search=${query}`,
+        {method: 'GET'},
+      )
+      request.headers.append('Accept', 'application/json')
+
+      const response = await fetch(request)
+      const json = await response.json()
+
+      if (!response.ok || !json || !Array.isArray(json.work)) {
+        return []
+      }
+
+      return json.work.map(w => ({
+        title: w.titleweb,
+        author: w.authorweb,
+      }))
+    }
+  }
+
+  ReactDOM.render(React.createElement(Root), document.getElementById('root'))
+</script>
