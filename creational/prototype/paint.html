@@ -92,7 +92,7 @@
         pointerVector: null,
       }
       this.selector = React.createRef()
-      this.graphic = null
+      this.currentlyDrawnGraphic = null
       this.canvasSnapshot = null
     }
 
@@ -144,7 +144,8 @@
 
     onDrawStart() {
       this.canvasSnapshot = this.selector.current.toDataURL('png')
-      this.graphic = this.props.graphic.clone()
+      // Client clones the prototype.
+      this.currentlyDrawnGraphic = this.props.graphic.clone()
     }
 
     onDrawing() {
@@ -155,9 +156,9 @@
       snapshot.onload = () => {
         ctx.clearRect(0, 0, canvas.width, canvas.height)
         ctx.drawImage(snapshot, 0, 0)
-        this.graphic.outline(this.state.pointerVector)
+        this.currentlyDrawnGraphic.outline(this.state.pointerVector)
 
-        this.graphic.getPlots().forEach(plot => {
+        this.currentlyDrawnGraphic.getPlots().forEach(plot => {
           ctx.fillStyle = '#ffffff'
           ctx.beginPath()
           ctx.fillRect(plot.x, plot.y, 1, 1)
@@ -200,6 +201,7 @@
     }
   }
 
+  // Abstract prototype is defined within framework.
   class Graphic {
     clone() {
       throw new Error('unimplemented clone')
@@ -218,7 +220,9 @@
     }
   }
 
-  // Shape is defined outside of framework.
+
+
+  // Concrete prototype is defined outside of framework.
   class Rect extends Graphic {
     constructor(plots) {
       super()
@@ -288,7 +292,6 @@
       return 'line'
     }
   }
-
 
   class Vector2 {
     constructor(a, b) {
