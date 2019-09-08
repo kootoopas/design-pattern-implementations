@@ -1,0 +1,446 @@
+<link rel='stylesheet' href='https://cdnjs.cloudflare.com/ajax/libs/foundation/6.5.3/css/foundation.css'>
+<style>
+    body {
+        margin: 0;
+    }
+
+    .tool {
+        padding: .2em;
+        margin-right: .2em;
+        width: 2.3em;
+        text-align: center;
+    }
+
+    .tool.selected {
+        font-weight: 900;
+        background: #E7E7E7;
+    }
+
+    canvas {
+        background: black;
+    }
+</style>
+
+<div id='root'></div>
+
+<script src='https://unpkg.com/react@16/umd/react.development.js' crossorigin></script>
+<script src='https://unpkg.com/react-dom@16/umd/react-dom.development.js' crossorigin></script>
+<script>
+
+  const e = React.createElement
+
+  class Root extends React.Component {
+    constructor(props) {
+      super(props)
+      this.state = {
+        selectedGraphic: props.graphics.find(
+          graphic => graphic.getId() === props.initiallySelectedGraphic,
+        ) || null,
+      }
+    }
+
+    render() {
+      return e(
+        'div',
+        {},
+        e('div',
+          {className: 'tools'},
+          ...this.props.graphics.map(
+            graphic => e(
+              GraphicTool,
+              {
+                label: graphic.getId(),
+                graphic: graphic,
+                onSelection: () => this.setState({selectedGraphic: graphic}),
+                isSelected: () => this.state.selectedGraphic.getId() === graphic.getId(),
+              },
+            ),
+          ),
+        ),
+        e(Canvas, {graphic: this.state.selectedGraphic}),
+      )
+    }
+  }
+
+  class GraphicTool extends React.Component {
+    constructor(props) {
+      super(props)
+    }
+
+    render() {
+      const classNames = ['tool']
+      if (this.props.isSelected()) {
+        classNames.push('selected')
+      }
+
+      return e(
+        'button',
+        {
+          className: classNames.join(' '),
+          onClick: () => this.props.onSelection(),
+        },
+        this.props.label,
+      )
+    }
+  }
+
+  // Framework
+  class Canvas extends React.Component {
+    constructor(props) {
+      super(props)
+      this.state = {
+        pointerVector: null,
+      }
+      this.selector = React.createRef()
+      this.graphic = null
+      this.canvasSnapshot = null
+    }
+
+    setPointerVector(e) {
+      if (!this.state.pointerVector) {
+        return
+      }
+
+      this.setState({
+        pointerVector: new Vector2(this.state.pointerVector.a, this.getPointerVertex(e)),
+      })
+    }
+
+    nullifyPointerVector() {
+      this.setState({pointerVector: null})
+    }
+
+    componentDidMount() {
+      this.selector.current.width = window.innerWidth
+      this.selector.current.height = window.innerHeight
+      document.addEventListener('keydown', (e) =>
+        e.key === 'Escape' && this.state.pointerVector && this.onDrawCancellation()
+      )
+      document.addEventListener('mousemove', (e) => this.setPointerVector(e))
+      document.addEventListener('mouseup', () => this.nullifyPointerVector())
+    }
+
+    componentWillUnmount() {
+      document.removeEventListener('keydown', (e) =>
+        e.key === 'Escape' && this.state.pointerVector && this.onDrawCancellation()
+      )
+      document.removeEventListener('mousemove', (e) => this.setPointerVector(e))
+      document.removeEventListener('mouseup', () => this.nullifyPointerVector())
+    }
+
+    componentDidUpdate(_, prevState) {
+      if (!prevState.pointerVector && this.state.pointerVector) {
+        this.onDrawStart()
+      }
+
+      if (prevState.pointerVector && this.state.pointerVector) {
+        this.onDrawing()
+      }
+
+      if (prevState.pointerVector && !this.state.pointerVector) {
+        this.onDrawEnd()
+      }
+    }
+
+    onDrawStart() {
+      this.canvasSnapshot = this.selector.current.toDataURL('png')
+      this.graphic = this.props.graphic.clone()
+    }
+
+    onDrawing() {
+      const canvas = this.selector.current
+      const ctx = this.selector.current.getContext('2d')
+
+      const snapshot = new Image()
+      snapshot.onload = () => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height)
+        ctx.drawImage(snapshot, 0, 0)
+        this.graphic.outline(this.state.pointerVector)
+
+        this.graphic.getPlots().forEach(plot => {
+          ctx.fillStyle = '#ffffff'
+          ctx.beginPath()
+          ctx.fillRect(plot.x, plot.y, 1, 1)
+        })
+      }
+      snapshot.src = this.canvasSnapshot
+    }
+
+    onDrawCancellation() {
+      const canvas = this.selector.current
+      const ctx = this.selector.current.getContext('2d')
+
+      const snapshot = new Image()
+      snapshot.onload = () => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height)
+        ctx.drawImage(snapshot, 0, 0)
+        this.nullifyPointerVector()
+      }
+      snapshot.src = this.canvasSnapshot
+    }
+
+    onDrawEnd() {
+    }
+
+    getPointerVertex(e) {
+      const canvasRect = this.selector.current.getBoundingClientRect()
+      return new Vertex2(e.clientX - canvasRect.x, e.clientY - canvasRect.y)
+    }
+
+    render() {
+      return e(
+        'canvas',
+        {
+          onMouseDown: (e) => this.setState({
+            pointerVector: new Vector2(this.getPointerVertex(e), this.getPointerVertex(e)),
+          }),
+          ref: this.selector,
+        },
+      )
+    }
+  }
+
+  class Graphic {
+    clone() {
+      throw new Error('unimplemented clone')
+    }
+
+    outline(vector2) {
+      throw new Error('unimplemented outline method')
+    }
+
+    getPlots() {
+      throw new Error('unimplemented plots getter')
+    }
+
+    getId() {
+      throw new Error('unimplemented id getter')
+    }
+  }
+
+  // Shape is defined outside of framework.
+  class Rect extends Graphic {
+    constructor(plots) {
+      super()
+      this.plots = plots || new Map()
+    }
+
+    clone() {
+      return new Rect(this.plots)
+    }
+
+    outline(vector2) {
+      const plots = new Map()
+
+      const minX = vector2.getMinX()
+      const maxX = vector2.getMaxX()
+      const minY = vector2.getMinY()
+      const maxY = vector2.getMaxY()
+
+      for (let x = minX; x <= maxX; x += 1) {
+        const topPlot = new Vertex2(x, minY)
+        plots.set(topPlot.toString(), topPlot)
+
+        const bottomPlot = new Vertex2(x, maxY)
+        plots.set(bottomPlot.toString(), bottomPlot)
+      }
+
+      for (let y = minY; y <= maxY; y += 1) {
+        const leftPlot = new Vertex2(minX, y)
+        plots.set(leftPlot.toString(), leftPlot)
+
+        const rightPlot = new Vertex2(maxX, y)
+        plots.set(rightPlot.toString(), rightPlot)
+      }
+
+      this.plots = plots
+    }
+
+    getPlots() {
+      return new Set(this.plots.values())
+    }
+
+    getId() {
+      return 'rect'
+    }
+  }
+
+  class Line extends Graphic {
+    constructor(plots) {
+      super()
+      this.plots = plots || new Map()
+    }
+
+    clone() {
+      return new Line(this.plots)
+    }
+
+    outline(vector2) {
+      const lineGeometry = new LineGeometry()
+      this.plots = lineGeometry.plotLine(vector2.a, vector2.b)
+    }
+
+    getPlots() {
+      return new Set(this.plots.values())
+    }
+
+    getId() {
+      return 'line'
+    }
+  }
+
+
+  class Vector2 {
+    constructor(a, b) {
+      this.a = a
+      this.b = b
+    }
+
+    getMinX() {
+      return Math.min(this.a.x, this.b.x)
+    }
+
+    getMaxX() {
+      return Math.max(this.a.x, this.b.x)
+    }
+
+    getMinY() {
+      return Math.min(this.a.y, this.b.y)
+    }
+
+    getMaxY() {
+      return Math.max(this.a.y, this.b.y)
+    }
+  }
+
+  class Vertex2 {
+    constructor(x, y) {
+      this.x = x
+      this.y = y
+    }
+
+    toString() {
+      return `${this.x},${this.y}`
+    }
+  }
+
+  class LineGeometry {
+
+    /**
+     * Get line as set of 2d points of integer values. Implements Bresenham's line algorithm.
+     * source: https://www.freecodecamp.org/news/how-to-code-your-first-algorithm-draw-a-line-ca121f9a1395/
+     * @param a
+     * @param b
+     */
+    plotLine(a, b) {
+      const x1 = a.x
+      const y1 = a.y
+      const x2 = b.x
+      const y2 = b.y
+
+      const plots = new Map()
+
+      // Calculate line deltas.
+      const dx = x2 - x1
+      const dy = y2 - y1
+
+      // Create a positive copy of deltas (makes iterating easier).
+      const dx1 = Math.abs(dx)
+      const dy1 = Math.abs(dy)
+
+      // Calculate error intervals for both axes.
+      let px = 2 * dy1 - dx1
+      let py = 2 * dx1 - dy1
+
+      let x
+      let y
+
+      if (dy1 <= dx1) {
+        // The line is X-axis dominant.
+
+        let xe
+
+        if (dx >= 0) {
+          // Line is drawn left to right.
+          x = x1
+          y = y1
+          xe = x2;
+        } else {
+          // Line is drawn right to left (swap ends).
+          x = x2
+          y = y2
+          xe = x1
+        }
+
+        plots.set([x, y].toString(), new Vertex2(x, y))
+
+        // Plot the line.
+        for (let i = 0; x < xe; i++) {
+          x = x + 1;
+
+          // Deal with octants...
+          if (px < 0) {
+            px = px + 2 * dy1;
+          } else {
+            if ((dx < 0 && dy < 0) || (dx > 0 && dy > 0)) {
+              y = y + 1;
+            } else {
+              y = y - 1;
+            }
+            px = px + 2 * (dy1 - dx1);
+          }
+
+          plots.set([x, y].toString(), new Vertex2(x, y))
+        }
+      } else {
+        // The line is Y-axis dominant.
+
+        let ye
+
+        if (dy >= 0) {
+          // Line is drawn bottom to top.
+          x = x1
+          y = y1
+          ye = y2
+        } else {
+          // Line is drawn top to bottom.
+          x = x2
+          y = y2
+          ye = y1
+        }
+
+        plots.set([x, y].toString(), new Vertex2(x, y))
+
+        // Plot the line.
+        for (let i = 0; y < ye; i++) {
+          y = y + 1;
+
+          // Deal with octants...
+          if (py <= 0) {
+            py = py + 2 * dx1;
+          } else {
+            if (dx < 0 && dy < 0 || dx > 0 && dy > 0) {
+              x = x + 1;
+            } else {
+              x = x - 1;
+            }
+            py = py + 2 * (dx1 - dy1);
+          }
+
+          plots.set([x, y].toString(), new Vertex2(x, y))
+        }
+      }
+
+      return plots
+    }
+  }
+
+  ReactDOM.render(
+    e(Root, {
+      // Prototype registry.
+      graphics: [new Line(), new Rect()],
+      initiallySelectedGraphic: 'line',
+    }),
+    document.getElementById('root'),
+  )
+</script>
