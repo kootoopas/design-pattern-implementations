@@ -5,6 +5,10 @@
         margin: 0;
     }
 
+    .tools {
+        border-bottom: 1px solid #E7E7E7;
+    }
+
     .tool {
         padding: .2em;
         margin-right: .2em;
@@ -17,12 +21,18 @@
         background: #E7E7E7;
     }
 
+    .download {
+        margin: 0;
+        padding-top: .4em;
+        padding-bottom: .4em;
+    }
+
     .fill-toggle {
         margin: 0 0 0 .5em;
     }
 
-    canvas {
-        background: black;
+    .fill-toggle-label {
+        line-height: 1;
     }
 </style>
 
@@ -41,7 +51,8 @@
         selectedGraphic: props.graphics.find(
           graphic => graphic.getId() === props.initiallySelectedGraphic,
         ) || null,
-        fill: false
+        fill: false,
+        canvasSnapshot: null
       }
     }
 
@@ -80,11 +91,20 @@
             value: this.state.fill,
             onChange: (e) => this.handleFillChange(e)
           }),
-          e('label', {'htmlFor': 'fill-toggle'}, 'fill'),
+          e('label', {className: 'fill-toggle-label', htmlFor: 'fill-toggle'}, 'fill'),
+          e('a', {
+              className: 'button clear secondary tiny download',
+              href: this.state.canvasSnapshot,
+              download: 'github-kootoopas-you-asked-for-it-its-a-long-name-i-m-going-to-keep-writing-do-you-ever-wonder-why-humans-dont-follow-their-instict--why-dont-we-follow-our-heart-why-do-we-worship-false-gods.png',
+              disabled: this.state.canvasSnapshot === null
+            },
+            'download'
+          )
         ),
         e(Canvas, {
           graphic: this.state.selectedGraphic,
-          fill: this.state.fill
+          fill: this.state.fill,
+          onDrawEnd: (canvasSnapshot) => this.setState(prevState => Object.assign(prevState, {canvasSnapshot}))
         }),
       )
     }
@@ -164,6 +184,10 @@
       if (prevState.pointerVector && this.state.pointerVector) {
         this.onDrawing()
       }
+
+      if (prevState.pointerVector && !this.state.pointerVector) {
+        this.onDrawEnd()
+      }
     }
 
     onDrawStart() {
@@ -188,12 +212,19 @@
         }
 
         this.currentlyDrawnGraphic.getPlots().forEach(plot => {
-          ctx.fillStyle = '#ffffff'
+          ctx.fillStyle = '#000000'
           ctx.beginPath()
           ctx.fillRect(plot.x, plot.y, 1, 1)
         })
       }
       snapshot.src = this.canvasSnapshot
+    }
+
+    onDrawEnd() {
+      this.props.onDrawEnd(
+        this.selector.current.toDataURL('png')
+          .replace('image/png', 'image/octet-stream')
+      )
     }
 
     onDrawCancellation() {
