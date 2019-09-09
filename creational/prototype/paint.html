@@ -7,7 +7,7 @@
     .tool {
         padding: .2em;
         margin-right: .2em;
-        width: 2.3em;
+        min-width: 2.3em;
         text-align: center;
     }
 
@@ -269,6 +269,39 @@
     }
   }
 
+
+  class Ellipsis extends Graphic {
+    constructor(plots) {
+      super()
+      this.plots = plots || new Set()
+    }
+
+    clone() {
+      return new Ellipsis(this.plots)
+    }
+
+    outline(vector2) {
+      const ellipsisGeometry = new EllipsisGeometry()
+      const lineGeometry = new LineGeometry()
+
+      const vectorMidpoint = lineGeometry.getMidpoint(vector2.a, vector2.b)
+      this.plots = ellipsisGeometry.plotEllipsis(
+        vectorMidpoint.x,
+        vectorMidpoint.y,
+        Math.max(vectorMidpoint.x, vector2.a.x) - Math.min(vectorMidpoint.x, vector2.a.x),
+        Math.max(vectorMidpoint.y, vector2.a.y) - Math.min(vectorMidpoint.y, vector2.a.y)
+      )
+    }
+
+    getPlots() {
+      return this.plots
+    }
+
+    getId() {
+      return 'ellipsis'
+    }
+  }
+
   class Line extends Graphic {
     constructor(plots) {
       super()
@@ -330,7 +363,7 @@
   class LineGeometry {
 
     /**
-     * Get line as set of 2d points of integer values. Implements Bresenham's line algorithm.
+     * Get line as set of 2d vertices of integer values. Implements Bresenham's line algorithm.
      * source: https://www.freecodecamp.org/news/how-to-code-your-first-algorithm-draw-a-line-ca121f9a1395/
      * @param a
      * @param b
@@ -436,13 +469,82 @@
 
       return plots
     }
+
+    getMidpoint(a, b) {
+      return new Vertex2((a.x + b.x) / 2, (a.y + b.y) / 2)
+    }
+
+  }
+
+  class EllipsisGeometry {
+
+    // Ported from: https://stackoverflow.com/a/15482128
+    plotEllipsis(xc,yc,  a,  b) {
+      const plots = new Set()
+
+      const a2 = a * a
+      const b2 = b * b
+      const twoa2 = 2 * a2
+      const twob2 = 2 * b2
+      let p
+      let x = 0
+      let y = b
+      let px = 0
+      let py = twoa2 * y
+
+      /* Plot the initial point in each quadrant. */
+      this.addPlots(plots, xc, yc, x, y)
+
+      /* Region 1 */
+      p = Math.round (b2 - (a2 * b) + (0.25 * a2))
+      while (px < py) {
+        x++
+        px += twob2
+        if (p < 0)
+          p += b2 + px
+        else {
+          y--
+          py -= twoa2
+          p += b2 + px - py
+        }
+        this.addPlots(plots, xc,yc, x, y)
+      }
+
+      /* Region 2 */
+      p = Math.round (b2 * (x+0.5) * (x+0.5) + a2 * (y-1) * (y-1) - a2 * b2)
+      while (y > 0) {
+        y--
+        py -= twoa2
+        if (p > 0)
+          p += a2 - py
+        else {
+          x++
+          px += twob2
+          p += a2 - py + px
+        }
+        this.addPlots(plots, xc, yc, x, y)
+      }
+
+      return plots
+    }
+
+    addPlots(set, xc, yc, x, y) {
+      const a = new Vertex2(xc + x, yc + y)
+      const b = new Vertex2(xc - x, yc + y)
+      const c = new Vertex2(xc + x, yc - y)
+      const d = new Vertex2(xc - x, yc - y)
+      set.add(a)
+      set.add(b)
+      set.add(c)
+      set.add(d)
+    }
   }
 
   ReactDOM.render(
     e(Root, {
       // Prototype registry.
-      graphics: [new Line(), new Rect()],
-      initiallySelectedGraphic: 'line',
+      graphics: [new Line(), new Rect(), new Ellipsis()],
+      initiallySelectedGraphic: 'ellipsis',
     }),
     document.getElementById('root'),
   )
