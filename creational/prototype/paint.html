@@ -68,9 +68,7 @@
     }
 
     render() {
-      return e(
-        'div',
-        {},
+      return e('div', {},
         e('div',
           {className: 'tools'},
           ...this.props.graphics.map(
@@ -99,7 +97,8 @@
               disabled: this.state.canvasSnapshot === null
             },
             'download'
-          )
+          ),
+          e('span', {className: 'float-right'}, 'rip terry a davis')
         ),
         e(Canvas, {
           graphic: this.state.selectedGraphic,
