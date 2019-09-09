@@ -1,4 +1,5 @@
-<link rel='stylesheet' href='https://cdnjs.cloudflare.com/ajax/libs/foundation/6.5.3/css/foundation.css'>
+<link rel='stylesheet'
+      href='https://cdnjs.cloudflare.com/ajax/libs/foundation/6.5.3/css/foundation.css'>
 <style>
     body {
         margin: 0;
@@ -14,6 +15,10 @@
     .tool.selected {
         font-weight: 900;
         background: #E7E7E7;
+    }
+
+    .fill-toggle {
+        margin: 0 0 0 .5em;
     }
 
     canvas {
@@ -36,7 +41,19 @@
         selectedGraphic: props.graphics.find(
           graphic => graphic.getId() === props.initiallySelectedGraphic,
         ) || null,
+        fill: false
       }
+    }
+
+    handleFillChange(e) {
+      e.persist()
+      if (!e.target) {
+        return
+      }
+
+      this.setState((prevState) =>
+        Object.assign(prevState, { fill: e.target.checked })
+      )
     }
 
     render() {
@@ -51,13 +68,24 @@
               {
                 label: graphic.getId(),
                 graphic: graphic,
-                onSelection: () => this.setState({selectedGraphic: graphic}),
+                onSelection: () => this.setState((prevState) => Object.assign(prevState, {selectedGraphic: graphic})),
                 isSelected: () => this.state.selectedGraphic.getId() === graphic.getId(),
               },
             ),
           ),
+          e('input', {
+            type: 'checkbox',
+            id: 'fill-toggle',
+            className: 'fill-toggle',
+            value: this.state.fill,
+            onChange: (e) => this.handleFillChange(e)
+          }),
+          e('label', {'htmlFor': 'fill-toggle'}, 'fill'),
         ),
-        e(Canvas, {graphic: this.state.selectedGraphic}),
+        e(Canvas, {
+          graphic: this.state.selectedGraphic,
+          fill: this.state.fill
+        }),
       )
     }
   }
@@ -114,7 +142,7 @@
       this.selector.current.width = window.innerWidth
       this.selector.current.height = window.innerHeight
       document.addEventListener('keydown', (e) =>
-        e.key === 'Escape' && this.state.pointerVector && this.onDrawCancellation()
+        e.key === 'Escape' && this.state.pointerVector && this.onDrawCancellation(),
       )
       document.addEventListener('mousemove', (e) => this.setPointerVector(e))
       document.addEventListener('mouseup', () => this.nullifyPointerVector())
@@ -122,7 +150,7 @@
 
     componentWillUnmount() {
       document.removeEventListener('keydown', (e) =>
-        e.key === 'Escape' && this.state.pointerVector && this.onDrawCancellation()
+        e.key === 'Escape' && this.state.pointerVector && this.onDrawCancellation(),
       )
       document.removeEventListener('mousemove', (e) => this.setPointerVector(e))
       document.removeEventListener('mouseup', () => this.nullifyPointerVector())
@@ -152,7 +180,12 @@
       snapshot.onload = () => {
         ctx.clearRect(0, 0, canvas.width, canvas.height)
         ctx.drawImage(snapshot, 0, 0)
-        this.currentlyDrawnGraphic.outline(this.state.pointerVector)
+
+        if (this.props.fill) {
+          this.currentlyDrawnGraphic.fill(this.state.pointerVector)
+        } else {
+          this.currentlyDrawnGraphic.outline(this.state.pointerVector)
+        }
 
         this.currentlyDrawnGraphic.getPlots().forEach(plot => {
           ctx.fillStyle = '#ffffff'
@@ -204,6 +237,10 @@
       throw new Error('unimplemented outline method')
     }
 
+    fill(vector2) {
+      throw new Error('unimplemented fill method')
+    }
+
     getPlots() {
       throw new Error('unimplemented plots getter')
     }
@@ -212,7 +249,6 @@
       throw new Error('unimplemented id getter')
     }
   }
-
 
 
   // Concrete prototype is defined outside of framework.
@@ -253,12 +289,30 @@
       this.plots = plots
     }
 
+    fill(vector2) {
+      const plots = new Map()
+
+      const minX = vector2.getMinX()
+      const maxX = vector2.getMaxX()
+      const minY = vector2.getMinY()
+      const maxY = vector2.getMaxY()
+
+      for (let x = minX; x <= maxX; x += 1) {
+        for (let y = minY; y <= maxY; y += 1) {
+          const plot = new Vertex2(x, y)
+          plots.set(plot.toString(), plot)
+        }
+      }
+
+      this.plots = plots
+    }
+
     getPlots() {
       return new Set(this.plots.values())
     }
 
     getId() {
-      return 'rect'
+      return 'rectangle'
     }
   }
 
@@ -282,8 +336,37 @@
         vectorMidpoint.x,
         vectorMidpoint.y,
         Math.max(vectorMidpoint.x, vector2.a.x) - Math.min(vectorMidpoint.x, vector2.a.x),
-        Math.max(vectorMidpoint.y, vector2.a.y) - Math.min(vectorMidpoint.y, vector2.a.y)
+        Math.max(vectorMidpoint.y, vector2.a.y) - Math.min(vectorMidpoint.y, vector2.a.y),
       )
+    }
+
+    fill(vector2) {
+      const plots = new Set()
+
+      const ellipsisGeometry = new EllipsisGeometry()
+      const lineGeometry = new LineGeometry()
+
+      const vectorMidpoint = lineGeometry.getMidpoint(vector2.a, vector2.b)
+      const outlinePlots = [...ellipsisGeometry.plotEllipsis(
+        vectorMidpoint.x,
+        vectorMidpoint.y,
+        Math.max(vectorMidpoint.x, vector2.a.x) - Math.min(vectorMidpoint.x, vector2.a.x),
+        Math.max(vectorMidpoint.y, vector2.a.y) - Math.min(vectorMidpoint.y, vector2.a.y),
+      )]
+
+      const minY = vector2.getMinY()
+      const maxY = vector2.getMaxY()
+
+      for (let y = minY; y <= maxY; y += 1) {
+        const row = outlinePlots.filter(plot => plot.y === y)
+        const minX = row.reduce((minX, plot) => Math.min(minX, plot.x), row[0].x)
+        const maxX = row.reduce((maxX, plot) => Math.max(maxX, plot.x), row[0].x)
+        for (let x = minX; x <= maxX; x += 1) {
+            plots.add(new Vertex2(x, y))
+        }
+      }
+
+      this.plots = plots
     }
 
     getPlots() {
@@ -308,6 +391,10 @@
     outline(vector2) {
       const lineGeometry = new LineGeometry()
       this.plots = lineGeometry.plotLine(vector2.a, vector2.b)
+    }
+
+    fill(vector2) {
+      this.outline(vector2)
     }
 
     getPlots() {
@@ -472,7 +559,7 @@
   class EllipsisGeometry {
 
     // Ported from: https://stackoverflow.com/a/15482128
-    plotEllipsis(xc,yc,  a,  b) {
+    plotEllipsis(xc, yc, a, b) {
       const plots = new Set()
 
       const a2 = a * a
@@ -489,7 +576,7 @@
       this.addPlots(plots, xc, yc, x, y)
 
       /* Region 1 */
-      p = Math.round (b2 - (a2 * b) + (0.25 * a2))
+      p = Math.round(b2 - (a2 * b) + (0.25 * a2))
       while (px < py) {
         x++
         px += twob2
@@ -500,11 +587,11 @@
           py -= twoa2
           p += b2 + px - py
         }
-        this.addPlots(plots, xc,yc, x, y)
+        this.addPlots(plots, xc, yc, x, y)
       }
 
       /* Region 2 */
-      p = Math.round (b2 * (x+0.5) * (x+0.5) + a2 * (y-1) * (y-1) - a2 * b2)
+      p = Math.round(b2 * (x + 0.5) * (x + 0.5) + a2 * (y - 1) * (y - 1) - a2 * b2)
       while (y > 0) {
         y--
         py -= twoa2
@@ -522,10 +609,10 @@
     }
 
     addPlots(set, xc, yc, x, y) {
-      const a = new Vertex2(xc + x, yc + y)
-      const b = new Vertex2(xc - x, yc + y)
-      const c = new Vertex2(xc + x, yc - y)
-      const d = new Vertex2(xc - x, yc - y)
+      const a = new Vertex2(Math.floor(xc + x), Math.floor(yc + y))
+      const b = new Vertex2(Math.floor(xc - x), Math.floor(yc + y))
+      const c = new Vertex2(Math.floor(xc + x), Math.floor(yc - y))
+      const d = new Vertex2(Math.floor(xc - x), Math.floor(yc - y))
       set.add(a)
       set.add(b)
       set.add(c)
