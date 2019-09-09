@@ -136,10 +136,6 @@
       if (prevState.pointerVector && this.state.pointerVector) {
         this.onDrawing()
       }
-
-      if (prevState.pointerVector && !this.state.pointerVector) {
-        this.onDrawEnd()
-      }
     }
 
     onDrawStart() {
@@ -178,9 +174,6 @@
         this.nullifyPointerVector()
       }
       snapshot.src = this.canvasSnapshot
-    }
-
-    onDrawEnd() {
     }
 
     getPointerVertex(e) {
