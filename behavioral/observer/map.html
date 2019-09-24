@@ -1,0 +1,365 @@
+<link rel='stylesheet'
+      href='https://cdnjs.cloudflare.com/ajax/libs/foundation/6.5.3/css/foundation.css'>
+
+<script src='https://cdnjs.cloudflare.com/ajax/libs/vue/2.6.10/vue.js'></script>
+
+<div id='root'>
+    <div class='grid-x'>
+        <div class='cell small-10'>
+            <object-map></object-map>
+        </div>
+        <div class='cell small-2'>
+            <location-selector></location-selector>
+        </div>
+    </div>
+    <footer>
+        <location-text></location-text>
+    </footer>
+</div>
+
+<script>
+
+  // Models
+
+  class Obj {
+
+    constructor(location, appearanceType) {
+      this.location = location
+      this.setAppearance(appearanceType)
+    }
+
+    setAppearance(appearanceType) {
+      if (!this.location) {
+        throw new Error('setting of appearance requires location to be set beforehand')
+      }
+
+      const types = new Set([
+        WeakAppearance,
+        StrongAppearance
+      ])
+      if (!types.has(appearanceType)) {
+        throw new Error(`${appearanceType} is not a valid appearance`)
+      }
+
+      this.appearance = new appearanceType(this.location)
+    }
+
+    render(ctx, offset) {
+      this.appearance.render(ctx, offset)
+    }
+  }
+
+  class Appearance {
+    constructor(location) {
+      this.location = location
+    }
+
+    render(ctx, offset) {
+      throw new Error('unimplemented render')
+    }
+
+    toString() {
+      return this.constructor.name || 'UnnamedAppearance'
+    }
+
+    getLocation(offset) {
+      return {
+        x: this.location.x + offset.x,
+        y: this.location.y + offset.y,
+      }
+    }
+  }
+
+  class WeakAppearance extends Appearance {
+    render(ctx, offset) {
+      const location = this.getLocation(offset)
+
+      // circle
+      ctx.beginPath()
+      ctx.arc(location.x, location.y, 10, 0, 2 * Math.PI)
+      ctx.arc(location.x, location.y, 11, 0, 2 * Math.PI)
+      ctx.strokeStyle = '#000000'
+      ctx.stroke()
+
+      // distinction outline
+      ctx.beginPath()
+      ctx.arc(location.x, location.y, 8, 0, 2 * Math.PI)
+      ctx.arc(location.x, location.y, 9, 0, 2 * Math.PI)
+      ctx.strokeStyle = '#ffffff'
+      ctx.stroke()
+
+      ctx.beginPath()
+      ctx.arc(location.x, location.y, 12, 0, 2 * Math.PI)
+      ctx.arc(location.x, location.y, 13, 0, 2 * Math.PI)
+      ctx.strokeStyle = '#ffffff'
+      ctx.stroke()
+    }
+  }
+
+  class StrongAppearance extends Appearance {
+    render(ctx, offset) {
+      const location = this.getLocation(offset)
+
+      // distinction outline
+      ctx.beginPath()
+      ctx.arc(location.x, location.y, 16, 0, 2 * Math.PI)
+      ctx.fillStyle = '#ffffff'
+      ctx.fill()
+
+      // color fill
+      ctx.beginPath()
+      ctx.arc(location.x, location.y, 10, 0, 2 * Math.PI)
+      ctx.fillStyle = '#000000'
+      ctx.fill()
+
+      // color outline
+      ctx.beginPath()
+      ctx.arc(location.x, location.y, 13, 0, 2 * Math.PI)
+      ctx.arc(location.x, location.y, 14, 0, 2 * Math.PI)
+      ctx.strokeStyle = '#000000'
+      ctx.stroke()
+    }
+  }
+
+
+
+  // Services
+
+  class ObjectService {
+    getObjects() {
+      const objects = []
+      for (let i = 0; i < 50; i += 1) {
+        objects.push(
+          new Obj(
+            {
+              x: this.getRandomInteger(40, 1940),
+              y: this.getRandomInteger(40, 1660),
+            },
+            Math.random() > 0.25 ? StrongAppearance : WeakAppearance,
+          ),
+        )
+      }
+      return objects
+    }
+
+    getRandomInteger(min, max) {
+      return Math.floor(
+        Math.random() * (Math.floor(max) - Math.ceil(min))) + Math.ceil(min)
+    }
+  }
+
+
+  // Subjects (a subject is a specific type of observable)
+
+  class Subject {
+    constructor() {
+      this.observers = new Set()
+    }
+
+    attach(observer) {
+      if (this.observers.has(observer)) {
+        throw new Error(`cannot attach already attached observer ${observer}`)
+      }
+      this.observers.add(observer)
+    }
+
+    detach(observer) {
+      if (!this.observers.has(observer)) {
+        throw new Error(`cannot detach non-attached observer ${observer}`)
+      }
+      this.observers.delete(observer)
+    }
+
+    notify() {
+      this.observers.forEach(observer => {
+        observer.update(this)
+      })
+    }
+  }
+
+  class ObjectLayer extends Subject {
+    constructor() {
+      super()
+      this.state = []
+    }
+
+    setState(state) {
+      this.state = state
+      this.notify()
+    }
+
+    getState() {
+      // Should be readonly by observers.
+      return this.state
+    }
+  }
+
+  class Location extends Subject {
+    constructor(x, y) {
+      super()
+      this.state = {x, y}
+    }
+
+    setState(state) {
+      this.state = state
+      this.notify()
+    }
+
+    getState() {
+      return {...this.state}
+    }
+  }
+
+
+  // ViewModel
+
+  Vue.component('object-map', {
+    inject: ['locationSubject', 'objectLayerSubject'],
+    data() {
+      return {
+        location: {x: null, y: null},
+        objects: [],
+        canvasCtx: null,
+      }
+    },
+    template: `<canvas ref='canvas' width='1024' height='768'></canvas>`,
+
+    methods: {
+      update(subject) {
+        const state = subject.getState()
+        if (subject instanceof Location) {
+          this.location = state
+          this.updateCanvas()
+          return
+        } else if (subject instanceof ObjectLayer) {
+          this.objects = state
+          this.updateCanvas()
+          return
+        }
+
+        throw new Error(`unhandled ${subject} update`)
+      },
+
+      updateCanvas() {
+        this.canvasCtx.clearRect(0, 0, this.$refs.canvas.width, this.$refs.canvas.height)
+        this.objects.forEach(obj => {
+          obj.render(
+            this.canvasCtx,
+            {
+              x: -this.location.x,
+              y: -this.location.y,
+            },
+          )
+        })
+      },
+    },
+
+    beforeMount() {
+      this.locationSubject.attach(this)
+      this.objectLayerSubject.attach(this)
+
+      this.location = this.locationSubject.getState()
+      this.objects = this.objectLayerSubject.getState()
+    },
+
+    mounted() {
+      this.canvasCtx = this.$refs.canvas.getContext('2d')
+      this.updateCanvas()
+    },
+
+    destroyed() {
+      this.locationSubject.detach(this)
+      this.objectLayerSubject.detach(this)
+    },
+  })
+
+  Vue.component('location-selector', {
+    inject: ['locationSubject'],
+    data() {
+      return {
+        location: {x: null, y: null},
+      }
+    },
+    template: `
+        <div class='grid-x grid-margin-x'>
+            <input class='cell small-6' v-model.number.trim='location.x'
+                   v-on:change='setLocationState' v-on:keyup='setLocationState'
+                   type='number' step='40' />
+            <input class='cell small-6' v-model.number.trim='location.y'
+                   v-on:change='setLocationState' v-on:keyup='setLocationState'
+                   type='number' step='40' />
+        </div>
+    `,
+    methods: {
+      update(_) {
+        this.location = this.locationSubject.getState()
+      },
+      setLocationState() {
+        this.locationSubject.setState(this.location)
+      },
+    },
+    beforeMount() {
+      this.locationSubject.attach(this)
+      this.location = this.locationSubject.getState()
+    },
+    destroyed() {
+      this.locationSubject.detach()
+    },
+  })
+
+  Vue.component('location-text', {
+    inject: ['locationSubject'],
+    data() {
+      return {
+        location: {x: null, y: null},
+      }
+    },
+    template: `<p>x: {{ location.x }}, y: {{ location.y }}</p>`,
+
+    methods: {
+      update(subject) {
+        if (subject instanceof Location) {
+          this.location = subject.getState()
+          return
+        }
+
+        throw new Error(`unhandled ${subject} update`)
+      },
+    },
+
+    beforeMount() {
+      this.locationSubject.attach(this)
+      this.location = this.locationSubject.getState()
+    },
+
+    destroyed() {
+      this.locationSubject.detach(this)
+    },
+  })
+
+
+  // Application Factory
+
+  function app(locationSubject, objectLayerSubject, objectService) {
+    objectLayerSubject.setState(objectService.getObjects())
+
+    new Vue({
+      el: '#root',
+      provide: {
+        locationSubject,
+        objectLayerSubject,
+      },
+    })
+  }
+
+
+  // Application Initialization
+
+  app(
+    new Location(0, 0),
+    new ObjectLayer(),
+    new ObjectService(),
+  )
+
+
+</script>
