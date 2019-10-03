@@ -1,4 +1,4 @@
 # design-pattern-implementations
-Visual design pattern implementations on browser.
+Design pattern implementations on the browser.
 
 [[Demos](https://kootoopas.github.io/design-pattern-implementations)]
